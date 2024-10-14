@@ -1,3 +1,4 @@
+<Controle de estoque e vendas>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -166,11 +167,7 @@
 
     document.getElementById('establishmentForm').addEventListener('submit', function(event) {
         event.preventDefault(); // Previne o envio do formulário
-
-        // Aqui você pode adicionar uma mensagem de sucesso, se quiser
         alert('Informações do estabelecimento salvas com sucesso!');
-
-        // Limpar campos ou realizar outra ação, se necessário
     });
 
     document.getElementById('productForm').addEventListener('submit', function(event) {
@@ -192,6 +189,7 @@
             barcode: productBarcode
         });
 
+        saveProducts(); // Salvar produtos após adicionar
         updateProductTable();
         this.reset();
     });
@@ -209,57 +207,66 @@
                     <td>R$ ${product.price.toFixed(2)}</td>
                     <td>${product.barcode}</td>
                     <td>
-                        <button onclick="deleteProduct(${index})">Deletar</button>
+                        <button onclick="removeProduct(${index})">Remover</button>
                     </td>
                 </tr>
             `;
         });
     }
 
-    function deleteProduct(index) {
+    function removeProduct(index) {
         products.splice(index, 1);
         updateProductTable();
     }
 
+    function saveProducts() {
+        localStorage.setItem('products', JSON.stringify(products));
+    }
+
+    function loadProducts() {
+        const savedProducts = JSON.parse(localStorage.getItem('products'));
+        if (savedProducts) {
+            products.push(...savedProducts);
+            updateProductTable();
+        }
+    }
+
     document.getElementById('startSaleBtn').addEventListener('click', function() {
-        document.getElementById('overlay').style.display = 'block';
+        totalSale = 0;
+        addedProducts = [];
+        document.getElementById('addedProductsList').innerHTML = '';
+        document.getElementById('totalValue').textContent = '0.00';
         document.getElementById('saleScreen').style.display = 'block';
+        document.getElementById('overlay').style.display = 'block';
     });
 
     document.getElementById('addProductToSaleBtn').addEventListener('click', function() {
         const identifier = document.getElementById('saleIdentifier').value;
-        const saleQuantity = parseInt(document.getElementById('saleQuantity').value);
-        const product = products.find(p => p.barcode === identifier || p.name.toLowerCase() === identifier.toLowerCase());
+        const quantity = parseInt(document.getElementById('saleQuantity').value);
+        const product = products.find(p => p.name === identifier || p.barcode === identifier);
 
-        if (product) {
-            if (product.quantity >= saleQuantity) {
-                product.quantity -= saleQuantity;
-                totalSale += product.price * saleQuantity;
-                addedProducts.push({ name: product.name, quantity: saleQuantity, price: product.price });
-                updateProductTable();
-                updateAddedProductsList();
-                document.getElementById('saleIdentifier').value = '';
-                document.getElementById('saleQuantity').value = '';
-            } else {
-                alert('Quantidade em estoque insuficiente.');
+        if (product && product.quantity >= quantity) {
+            product.quantity -= quantity; // Atualiza a quantidade do produto no estoque
+            const productTotal = product.price * quantity;
+
+            totalSale += productTotal;
+            addedProducts.push({ ...product, quantity });
+
+            document.getElementById('addedProductsList').innerHTML += `<div>${product.name} - Qtd: ${quantity} - R$ ${productTotal.toFixed(2)}</div>`;
+            document.getElementById('totalValue').textContent = totalSale.toFixed(2);
+
+            updateProductTable(); // Atualiza a tabela de produtos após a venda
+
+            if (totalSale > 0) {
+                document.getElementById('completeSaleBtn').style.display = 'inline-block';
             }
         } else {
-            alert('Produto não encontrado.');
+            alert('Produto não encontrado ou quantidade insuficiente.');
         }
 
-        document.getElementById('totalValue').textContent = totalSale.toFixed(2);
-        if (addedProducts.length > 0) {
-            document.getElementById('completeSaleBtn').style.display = 'inline';
-        }
+        document.getElementById('saleIdentifier').value = '';
+        document.getElementById('saleQuantity').value = '';
     });
-
-    function updateAddedProductsList() {
-        const list = document.getElementById('addedProductsList');
-        list.innerHTML = '<strong>Produtos Adicionados:</strong><br>';
-        addedProducts.forEach(item => {
-            list.innerHTML += `${item.name} - Quantidade: ${item.quantity} - Preço: R$ ${item.price.toFixed(2)}<br>`;
-        });
-    }
 
     document.getElementById('completeSaleBtn').addEventListener('click', function() {
         const payment = parseFloat(prompt('Valor pago:'));
@@ -272,80 +279,83 @@
                 change: change,
                 date: new Date().toLocaleString()
             });
-            
-            document.getElementById('receiptProducts').innerHTML = '';
-            addedProducts.forEach(item => {
-                document.getElementById('receiptProducts').innerHTML += `${item.name} - Quantidade: ${item.quantity} - Preço: R$ ${item.price.toFixed(2)}<br>`;
-            });
-            document.getElementById('receiptTotalValue').textContent = totalSale.toFixed(2);
-            document.getElementById('receiptPayment').textContent = payment.toFixed(2);
-            document.getElementById('receiptChange').textContent = change.toFixed(2);
-            document.getElementById('receiptDate').textContent = new Date().toLocaleString();
-            document.getElementById('receiptEstablishmentName').textContent = document.getElementById('establishmentName').value;
-            document.getElementById('receiptEstablishmentCNPJ').textContent = document.getElementById('establishmentCNPJ').value;
-            document.getElementById('receiptEstablishmentAddress').textContent = document.getElementById('establishmentAddress').value;
-            document.getElementById('receiptEstablishmentEmail').textContent = document.getElementById('establishmentEmail').value;
-            document.getElementById('receiptEstablishmentPhone').textContent = document.getElementById('establishmentPhone').value;
 
-            document.getElementById('saleScreen').style.display = 'none';
-            document.getElementById('receiptScreen').style.display = 'block';
+            saveSalesHistory(); // Salvar histórico de vendas após finalizar a venda
+            displayReceipt(payment, change);
         } else {
             alert('Valor pago insuficiente.');
         }
     });
 
-    document.getElementById('printReceiptBtn').addEventListener('click', function() {
-        const printContent = document.getElementById('receiptScreen').innerHTML;
-        const win = window.open('', '', 'width=600,height=600');
-        win.document.write(`<html><head><title>Comprovante</title></head><body>${printContent}</body></html>`);
-        win.document.close();
-        win.print();
-    });
+    function displayReceipt(payment, change) {
+        const receiptProducts = document.getElementById('receiptProducts');
+        receiptProducts.innerHTML = ''; // Limpa o recibo anterior
+        addedProducts.forEach(item => {
+            receiptProducts.innerHTML += `<div>${item.name} - Qtd: ${item.quantity} - R$ ${(item.price * item.quantity).toFixed(2)}</div>`;
+        });
+
+        document.getElementById('receiptTotalValue').textContent = totalSale.toFixed(2);
+        document.getElementById('receiptPayment').textContent = payment.toFixed(2);
+        document.getElementById('receiptChange').textContent = change.toFixed(2);
+        document.getElementById('receiptDate').textContent = new Date().toLocaleString();
+        document.getElementById('receiptEstablishmentName').textContent = document.getElementById('establishmentName').value;
+        document.getElementById('receiptEstablishmentCNPJ').textContent = document.getElementById('establishmentCNPJ').value;
+        document.getElementById('receiptEstablishmentAddress').textContent = document.getElementById('establishmentAddress').value;
+        document.getElementById('receiptEstablishmentEmail').textContent = document.getElementById('establishmentEmail').value;
+        document.getElementById('receiptEstablishmentPhone').textContent = document.getElementById('establishmentPhone').value;
+
+        // Exibir recibo
+        document.getElementById('saleScreen').style.display = 'none';
+        document.getElementById('receiptScreen').style.display = 'block';
+        document.getElementById('overlay').style.display = 'block'; // Certifica-se que o overlay também está visível
+    }
 
     document.getElementById('closeReceiptBtn').addEventListener('click', function() {
         document.getElementById('receiptScreen').style.display = 'none';
-        document.getElementById('overlay').style.display = 'none';
-        resetSale();
+        document.getElementById('overlay').style.display = 'none'; // Oculta o overlay
+    });
+
+    document.getElementById('printReceiptBtn').addEventListener('click', function() {
+        window.print(); // Imprime o recibo
+    });
+
+    document.getElementById('viewSalesHistoryBtn').addEventListener('click', function() {
+        loadSalesHistory();
+        document.getElementById('salesHistoryScreen').style.display = 'block';
+        document.getElementById('overlay').style.display = 'block'; // Mostra o overlay
     });
 
     document.getElementById('closeSalesHistoryBtn').addEventListener('click', function() {
         document.getElementById('salesHistoryScreen').style.display = 'none';
-        document.getElementById('overlay').style.display = 'none';
+        document.getElementById('overlay').style.display = 'none'; // Oculta o overlay
     });
 
-    document.getElementById('viewSalesHistoryBtn').addEventListener('click', function() {
-        document.getElementById('salesHistoryTable').querySelector('tbody').innerHTML = '';
-        salesHistory.forEach(sale => {
-            sale.products.forEach(item => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${item.name}</td>
-                    <td>${item.quantity}</td>
-                    <td>R$ ${sale.totalValue.toFixed(2)}</td>
-                    <td>R$ ${sale.change.toFixed(2)}</td>
-                    <td>${sale.date}</td>
-                `;
-                document.getElementById('salesHistoryTable').querySelector('tbody').appendChild(row);
-            });
-        });
-        document.getElementById('salesHistoryScreen').style.display = 'block';
-        document.getElementById('overlay').style.display = 'block';
-    });
-
-    document.getElementById('cancelSaleBtn').addEventListener('click', function() {
-        resetSale();
-        document.getElementById('saleScreen').style.display = 'none';
-        document.getElementById('overlay').style.display = 'none';
-    });
-
-    function resetSale() {
-        totalSale = 0;
-        addedProducts = [];
-        document.getElementById('totalValue').textContent = '0.00';
-        document.getElementById('addedProductsList').innerHTML = '';
-        document.getElementById('completeSaleBtn').style.display = 'none';
+    function saveSalesHistory() {
+        localStorage.setItem('salesHistory', JSON.stringify(salesHistory));
     }
-</script>
 
+    function loadSalesHistory() {
+        const savedSales = JSON.parse(localStorage.getItem('salesHistory'));
+        const tbody = document.querySelector('#salesHistoryTable tbody');
+        tbody.innerHTML = '';
+        if (savedSales) {
+            savedSales.forEach(sale => {
+                sale.products.forEach(item => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>${item.name}</td>
+                            <td>${item.quantity}</td>
+                            <td>R$ ${sale.totalValue.toFixed(2)}</td>
+                            <td>R$ ${sale.change.toFixed(2)}</td>
+                            <td>${sale.date}</td>
+                        </tr>
+                    `;
+                });
+            });
+        }
+    }
+
+    loadProducts(); // Carrega os produtos ao iniciar
+</script>
 </body>
 </html>
